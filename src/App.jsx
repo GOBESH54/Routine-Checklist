@@ -4,6 +4,17 @@ import {
   Flame, Clock, BarChart3, X, Plus, Edit2, Trash2, Save, Target, Award, TrendingUp 
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line, Tooltip } from 'recharts';
+import { supabase } from './supabaseClient';
+
+// Generate unique device ID
+const getDeviceId = () => {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = 'user_' + Math.random().toString(36).substr(2, 9) + Date.now();
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+};
 
 // Default routine data structure
 const DEFAULT_ROUTINES = {
@@ -45,25 +56,72 @@ function App() {
   const [showEditRoutine, setShowEditRoutine] = useState(false);
   const [routines, setRoutines] = useState(DEFAULT_ROUTINES);
   const [editingTask, setEditingTask] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const userId = getDeviceId();
 
-  // Load data from localStorage
+  // Load data from Supabase
   useEffect(() => {
-    const saved = localStorage.getItem('routineData');
-    if (saved) {
-      const data = JSON.parse(saved);
-      setCompletedTasks(data.completedTasks || {});
-      setIsHolidayMode(data.isHolidayMode || false);
-      setRoutines(data.routines || DEFAULT_ROUTINES);
-    }
+    loadFromCloud();
   }, []);
 
-  // Save data to localStorage
+  const loadFromCloud = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_data')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (data) {
+        setCompletedTasks(data.completed_tasks || {});
+        setIsHolidayMode(data.is_holiday_mode || false);
+        setRoutines(data.routines || DEFAULT_ROUTINES);
+      }
+    } catch (err) {
+      console.log('Loading from local storage as fallback');
+      const saved = localStorage.getItem('routineData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        setCompletedTasks(data.completedTasks || {});
+        setIsHolidayMode(data.isHolidayMode || false);
+        setRoutines(data.routines || DEFAULT_ROUTINES);
+      }
+    }
+  };
+
+  // Save data to Supabase
+  const saveToCloud = async (tasks, holiday, routineData) => {
+    setSyncing(true);
+    try {
+      const { error } = await supabase
+        .from('user_data')
+        .upsert({
+          user_id: userId,
+          completed_tasks: tasks,
+          is_holiday_mode: holiday,
+          routines: routineData,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Sync error:', err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Auto-save to cloud
   useEffect(() => {
-    localStorage.setItem('routineData', JSON.stringify({
-      completedTasks,
-      isHolidayMode,
-      routines
-    }));
+    if (Object.keys(completedTasks).length > 0 || routines !== DEFAULT_ROUTINES) {
+      saveToCloud(completedTasks, isHolidayMode, routines);
+      // Also save to localStorage as backup
+      localStorage.setItem('routineData', JSON.stringify({
+        completedTasks,
+        isHolidayMode,
+        routines
+      }));
+    }
   }, [completedTasks, isHolidayMode, routines]);
 
 
@@ -210,8 +268,9 @@ function App() {
               <p className="text-xs text-gray-400">
                 {currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 flex items-center gap-1">
                 {isHolidayMode ? '🌴 Holiday Mode' : '📚 College Mode'}
+                {syncing && <span className="text-green-400">• Syncing...</span>}
               </p>
             </div>
           </div>
