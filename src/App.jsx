@@ -4,7 +4,7 @@ import {
   Flame, Clock, BarChart3, X, Plus, Edit2, Trash2, Save, Target, Award, TrendingUp 
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line, Tooltip } from 'recharts';
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseEnabled } from './supabaseClient';
 
 // Generate unique device ID
 const getDeviceId = () => {
@@ -65,6 +65,18 @@ function App() {
   }, []);
 
   const loadFromCloud = async () => {
+    if (!isSupabaseEnabled) {
+      // Load from localStorage if Supabase not configured
+      const saved = localStorage.getItem('routineData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        setCompletedTasks(data.completedTasks || {});
+        setIsHolidayMode(data.isHolidayMode || false);
+        setRoutines(data.routines || DEFAULT_ROUTINES);
+      }
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('user_data')
@@ -91,6 +103,16 @@ function App() {
 
   // Save data to Supabase
   const saveToCloud = async (tasks, holiday, routineData) => {
+    if (!isSupabaseEnabled) {
+      // Just save to localStorage if Supabase not configured
+      localStorage.setItem('routineData', JSON.stringify({
+        completedTasks: tasks,
+        isHolidayMode: holiday,
+        routines: routineData
+      }));
+      return;
+    }
+
     setSyncing(true);
     try {
       const { error } = await supabase
@@ -270,7 +292,8 @@ function App() {
               </p>
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 {isHolidayMode ? '🌴 Holiday Mode' : '📚 College Mode'}
-                {syncing && <span className="text-green-400">• Syncing...</span>}
+                {isSupabaseEnabled && syncing && <span className="text-green-400">• Syncing...</span>}
+                {!isSupabaseEnabled && <span className="text-yellow-400">• Local Only</span>}
               </p>
             </div>
           </div>
