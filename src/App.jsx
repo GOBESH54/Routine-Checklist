@@ -7,14 +7,9 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line
 import { db, isFirebaseEnabled } from './firebaseConfig';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-// Generate unique device ID
+// Use a fixed user ID so all devices sync to the same data
 const getDeviceId = () => {
-  let deviceId = localStorage.getItem('deviceId');
-  if (!deviceId) {
-    deviceId = 'user_' + Math.random().toString(36).substr(2, 9) + Date.now();
-    localStorage.setItem('deviceId', deviceId);
-  }
-  return deviceId;
+  return 'main_user'; // Single ID for all your devices
 };
 
 // Default routine data structure
