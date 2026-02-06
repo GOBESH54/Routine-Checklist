@@ -4,7 +4,8 @@ import {
   Flame, Clock, BarChart3, X, Plus, Edit2, Trash2, Save, Target, Award, TrendingUp 
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line, Tooltip } from 'recharts';
-import { supabase, isSupabaseEnabled } from './supabaseClient';
+import { db, isFirebaseEnabled } from './firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Generate unique device ID
 const getDeviceId = () => {
@@ -59,14 +60,13 @@ function App() {
   const [syncing, setSyncing] = useState(false);
   const userId = getDeviceId();
 
-  // Load data from Supabase
+  // Load data from Firebase
   useEffect(() => {
     loadFromCloud();
   }, []);
 
   const loadFromCloud = async () => {
-    if (!isSupabaseEnabled) {
-      // Load from localStorage if Supabase not configured
+    if (!isFirebaseEnabled) {
       const saved = localStorage.getItem('routineData');
       if (saved) {
         const data = JSON.parse(saved);
@@ -78,15 +78,13 @@ function App() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('user_data')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      const docRef = doc(db, 'users', userId);
+      const docSnap = await getDoc(docRef);
 
-      if (data) {
-        setCompletedTasks(data.completed_tasks || {});
-        setIsHolidayMode(data.is_holiday_mode || false);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCompletedTasks(data.completedTasks || {});
+        setIsHolidayMode(data.isHolidayMode || false);
         setRoutines(data.routines || DEFAULT_ROUTINES);
       }
     } catch (err) {
@@ -101,10 +99,9 @@ function App() {
     }
   };
 
-  // Save data to Supabase
+  // Save data to Firebase
   const saveToCloud = async (tasks, holiday, routineData) => {
-    if (!isSupabaseEnabled) {
-      // Just save to localStorage if Supabase not configured
+    if (!isFirebaseEnabled) {
       localStorage.setItem('routineData', JSON.stringify({
         completedTasks: tasks,
         isHolidayMode: holiday,
@@ -115,17 +112,13 @@ function App() {
 
     setSyncing(true);
     try {
-      const { error } = await supabase
-        .from('user_data')
-        .upsert({
-          user_id: userId,
-          completed_tasks: tasks,
-          is_holiday_mode: holiday,
-          routines: routineData,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-
-      if (error) throw error;
+      const docRef = doc(db, 'users', userId);
+      await setDoc(docRef, {
+        completedTasks: tasks,
+        isHolidayMode: holiday,
+        routines: routineData,
+        updatedAt: new Date().toISOString()
+      });
     } catch (err) {
       console.error('Sync error:', err);
     } finally {
@@ -292,8 +285,8 @@ function App() {
               </p>
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 {isHolidayMode ? '🌴 Holiday Mode' : '📚 College Mode'}
-                {isSupabaseEnabled && syncing && <span className="text-green-400">• Syncing...</span>}
-                {!isSupabaseEnabled && <span className="text-yellow-400">• Local Only</span>}
+                {isFirebaseEnabled && syncing && <span className="text-green-400">• Syncing...</span>}
+                {!isFirebaseEnabled && <span className="text-yellow-400">• Local Only</span>}
               </p>
             </div>
           </div>
